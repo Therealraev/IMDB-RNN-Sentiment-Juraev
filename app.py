@@ -2,74 +2,67 @@ import streamlit as st
 import tensorflow as tf
 import numpy as np
 import json
-import pickle
 
-# -----------------------------
-# Load Model (Only once)
-# -----------------------------
+# -------------------------------------
+# Streamlit Page Setup
+# -------------------------------------
+st.set_page_config(
+    page_title="IMDB Sentiment Classifier",
+    layout="centered"
+)
+
+st.title("🎬 IMDB Movie Review Sentiment Analyzer")
+st.write("This tool predicts whether a movie review is **Positive** or **Negative** using an LSTM model trained on the IMDB dataset.")
+
+# -------------------------------------
+# Load the Model (Cached)
+# -------------------------------------
 @st.cache_resource
 def load_model():
-    model = tf.keras.models.load_model("imdb_lstm_model.h5")
-    return model
+    return tf.keras.models.load_model("imdb_lstm_model.h5", compile=False)
 
 model = load_model()
 
-# -----------------------------
-# Load Word Index + Config
-# -----------------------------
-with open("imdb_word_index.json", "r") as f:
+# -------------------------------------
+# Load Word Index
+# -------------------------------------
+with open("word_index.json", "r") as f:
     word_index = json.load(f)
 
-with open("config.pkl", "rb") as f:
-    config = pickle.load(f)
+MAX_LEN = 200
 
-MAXLEN = config["maxlen"]
 
-# -----------------------------
-# Helper function: Encode text
-# -----------------------------
-def encode_text(text):
-    words = text.lower().split()
-    encoded = [word_index.get(word, 2) for word in words]  # 2 = unknown token
-    padded = tf.keras.preprocessing.sequence.pad_sequences([encoded], maxlen=MAXLEN)
-    return padded
+# -------------------------------------
+# Text Preprocessing Function
+# -------------------------------------
+def preprocess_text(text):
+    text = text.lower().split()
+    encoded = [word_index.get(word, 2) for word in text]  # 2 = unknown token
+    encoded = encoded[:MAX_LEN]
+    padding = [0] * (MAX_LEN - len(encoded))
+    final = encoded + padding
+    return np.array([final])
 
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-st.title("🎬 IMDB Movie Review Classifier by **Juraev**")
-st.write("This app predicts whether a movie review is **Positive** or **Negative** based on an LSTM model trained on the IMDB dataset.")
 
-user_input = st.text_area("✍️ Enter a movie review below:")
+# -------------------------------------
+# UI Input
+# -------------------------------------
+review_text = st.text_area("✍ Write a movie review:")
 
-if st.button("🔍 Predict Sentiment"):
-    if user_input.strip():
-        encoded = encode_text(user_input)
-        prediction = model.predict(encoded)[0][0]
-
-        sentiment = "👍 **Positive**" if prediction > 0.5 else "👎 **Negative**"
-        
-        st.subheader("📌 Prediction Result:")
-        st.write(sentiment)
-        st.write(f"Confidence Score: **{prediction:.4f}**")
+if st.button("Predict Sentiment"):
+    if review_text.strip() == "":
+        st.warning("⚠ Please enter a review before predicting.")
     else:
-        st.warning("Please enter a review first!")
+        processed = preprocess_text(review_text)
+        prediction = model.predict(processed)[0][0]
 
-# -----------------------------
-# Show example predictions
-# -----------------------------
-st.subheader("🎯 Example Reviews:")
+        sentiment = "👍 Positive" if prediction > 0.5 else "👎 Negative"
 
-example_reviews = [
-    "The movie was fantastic, I loved every moment!",
-    "It was boring and too long.",
-    "Absolutely brilliant acting and storyline!",
-    "Worst film I have ever watched.",
-    "Pretty good, but could have been shorter."
-]
+        st.subheader(f"Result: {sentiment}")
+        st.write(f"Confidence Score: **{prediction:.4f}**")
 
-for review in example_reviews:
-    encoded = encode_text(review)
-    prediction = model.predict(encoded)[0][0]
-    sentiment = "🙂 Positive" if prediction > 0.5 else "🙁 Negative"
-    st.write(f"📌 \"{review}\" → **{sentiment} ({prediction:.2f})**")
+# -------------------------------------
+# Footer
+# -------------------------------------
+st.write("---")
+st.caption("Model: LSTM trained on IMDB Reviews dataset | Built by Feruz Juraev (NLP Course Project)")
