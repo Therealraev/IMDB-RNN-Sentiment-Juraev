@@ -19,8 +19,8 @@ st.write("This tool predicts whether a movie review is **Positive** or **Negativ
 # -------------------------------------
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model("imdb_model_fixed.h5", compile=False)
-
+    from keras.saving.legacy import load_model as legacy_load_model
+    return legacy_load_model("imdb_model_fixed.h5", compile=False)
 model = load_model()
 
 # -------------------------------------
