@@ -1,96 +1,99 @@
 import streamlit as st
 import numpy as np
 import json
+import random
 import tflite_runtime.interpreter as tflite
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.datasets import imdb
 
-# -------------------------
-# Load Model + Word Index
-# -------------------------
 
+# -----------------------------
+# App Title
+# -----------------------------
+st.title("🎬 IMDB Movie Review Classifier by Juraev")
+
+
+# -----------------------------
+# Load IMDB word index
+# -----------------------------
+@st.cache_data
+def load_word_index():
+    with open("imdb_word_index.json", "r") as f:
+        return json.load(f)
+
+word_index = load_word_index()
+index_to_word = {v: k for k, v in word_index.items()}
+
+
+# -----------------------------
+# Load TFLite model
+# -----------------------------
 @st.cache_resource
 def load_model():
     interpreter = tflite.Interpreter(model_path="model.tflite")
     interpreter.allocate_tensors()
     return interpreter
 
-@st.cache_resource
-def load_word_index():
-    with open("imdb_word_index.json") as f:
-        return json.load(f)
-
 interpreter = load_model()
-word_index = load_word_index()
 
-input_index = interpreter.get_input_details()[0]["index"]
-output_index = interpreter.get_output_details()[0]["index"]
-
-
-# -------------------------
-# Helper: Text → Model Input
-# -------------------------
+# Get input/output tensor details
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
 MAXLEN = 200
 
-def preprocess_text(text):
+
+# -----------------------------
+# Preprocessing Function
+# -----------------------------
+def encode_review(text):
     words = text.lower().split()
-    seq = [word_index.get(w, 2) for w in words]  # unknown token=2
-
-    if len(seq) > MAXLEN:
-        seq = seq[:MAXLEN]
-    else:
-        seq += [0] * (MAXLEN - len(seq))
-
-    return np.array([seq], dtype=np.int32)
+    encoded = [word_index.get(word, 2) for word in words]  # 2 = "UNK"
+    padded = pad_sequences([encoded], maxlen=MAXLEN)
+    return padded
 
 
-# -------------------------
-# Prediction Function
-# -------------------------
-
-def predict(text):
-    x = preprocess_text(text)
-
-    interpreter.set_tensor(input_index, x)
+def predict_sentiment(text):
+    encoded = encode_review(text)
+    interpreter.set_tensor(input_details[0]["index"], encoded.astype(np.float32))
     interpreter.invoke()
-    pred = interpreter.get_tensor(output_index)[0][0]
-
-    label = "Positive 😃" if pred > 0.5 else "Negative 😡"
-    return label, float(pred)
+    prediction = interpreter.get_tensor(output_details[0]["index"])[0][0]
+    return prediction
 
 
-# -------------------------
-# Streamlit UI
-# -------------------------
+# -----------------------------
+# Show 5 Random Real Reviews
+# -----------------------------
+st.subheader("📌 Random IMDB Reviews Classification")
 
-st.title("IMDB Movie Review Classifier by Juraev")
+(x_train, y_train), (_, _) = imdb.load_data(num_words=10000)
 
-st.write("This app predicts whether a movie review expresses a **positive** or **negative** sentiment.")
+def decode_imdb_review(encoded_review):
+    return " ".join([index_to_word.get(i, "UNK") for i in encoded_review])
 
-# Sample reviews required by assignment
-sample_reviews = [
-    "This movie was amazing! I really enjoyed every scene.",
-    "Worst movie ever. I wasted 2 hours of my life.",
-    "The acting was okay but the storyline was weak and boring.",
-    "Absolutely loved it! The visuals and plot were perfect.",
-    "Not bad, but could have been much better. Mixed feelings."
-]
+random_indices = random.sample(range(len(x_train)), 5)
 
-st.subheader("📌 Example Reviews and Predictions")
+for idx in random_indices:
+    review_text = decode_imdb_review(x_train[idx])
+    pred = predict_sentiment(review_text)
+    label = "😊 Positive" if pred > 0.5 else "😡 Negative"
+    
+    st.write("---")
+    st.write(f"📝 **Review:** {review_text[:300]}...")
+    st.write(f"🔍 **Prediction:** `{label}` (score: {pred:.3f})")
 
-for review in sample_reviews:
-    label, prob = predict(review)
-    st.write(f"**Review:** {review}")
-    st.write(f"**Prediction:** {label} ({prob:.4f})")
-    st.divider()
 
-# Custom Single Input
-st.subheader("🔍 Try Your Own Review")
+# -----------------------------
+# User Input Section
+# -----------------------------
+st.subheader("✍️ Try your own review")
 
-user_input = st.text_area("Enter movie review here:")
+user_input = st.text_area("Enter a movie review here:")
 
 if st.button("Classify"):
-    if user_input.strip():
-        label, prob = predict(user_input)
-        st.success(f"Prediction: **{label}**  ({prob:.4f})")
+    if len(user_input.strip()) == 0:
+        st.warning("⚠ Please enter a review!")
     else:
-        st.warning("Please enter a review before clicking classify.")
+        pred = predict_sentiment(user_input)
+        label = "😊 Positive" if pred > 0.5 else "😡 Negative"
+        st.success(f"Prediction: **{label}** (score: {pred:.3f})")
