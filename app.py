@@ -14,13 +14,20 @@ st.title("🎬 IMDB Movie Review Sentiment Classifier")
 st.write("Enter a movie review below and the model will classify it as **Positive** or **Negative**.")
 
 # -------------------------------
-# Load Model Safely
+# Load Model Safely (Legacy Format Support)
 # -------------------------------
 @st.cache_resource
 def load_model_safe():
-    return keras_load_model("imdb_model_fixed.h5", compile=False)
+    try:
+        # Attempt legacy loader first (for older saved Keras models)
+        from keras.saving.legacy import load_model as legacy_loader
+        return legacy_loader("imdb_model_fixed.h5", compile=False)
+    except Exception:
+        # Fallback if environment doesn't support legacy import
+        return tf.keras.models.load_model("imdb_model_fixed.h5", compile=False)
 
 model = load_model_safe()
+
 
 # -------------------------------
 # Load Tokenizer + Word Index
