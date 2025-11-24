@@ -2,67 +2,74 @@ import streamlit as st
 import tensorflow as tf
 import numpy as np
 import json
+import pickle
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import load_model as keras_load_model
 
-# -------------------------------------
-# Streamlit Page Setup
-# -------------------------------------
-st.set_page_config(
-    page_title="IMDB Sentiment Classifier",
-    layout="centered"
-)
+# -------------------------------
+# Streamlit App Header
+# -------------------------------
+st.set_page_config(page_title="IMDB Sentiment Classifier")
+st.title("🎬 IMDB Movie Review Sentiment Classifier")
+st.write("Enter a movie review below and the model will classify it as **Positive** or **Negative**.")
 
-st.title("🎬 IMDB Movie Review Sentiment Analyzer")
-st.write("This tool predicts whether a movie review is **Positive** or **Negative** using an LSTM model trained on the IMDB dataset.")
-
-# -------------------------------------
-# Load the Model (Cached)
-# -------------------------------------
+# -------------------------------
+# Load Model Safely
+# -------------------------------
 @st.cache_resource
-def load_model():
-    from keras.saving.legacy import load_model as legacy_load_model
-    return legacy_load_model("imdb_model_fixed.h5", compile=False)
-model = load_model()
+def load_model_safe():
+    return keras_load_model("imdb_model_fixed.h5", compile=False)
 
-# -------------------------------------
-# Load Word Index
-# -------------------------------------
-with open("word_index.json", "r") as f:
-    word_index = json.load(f)
+model = load_model_safe()
 
-MAX_LEN = 200
+# -------------------------------
+# Load Tokenizer + Word Index
+# -------------------------------
+@st.cache_resource
+def load_tokenizer():
+    with open("tokenizer.pkl", "rb") as f:
+        tokenizer = pickle.load(f)
+    return tokenizer
 
+tokenizer = load_tokenizer()
 
-# -------------------------------------
-# Text Preprocessing Function
-# -------------------------------------
-def preprocess_text(text):
-    text = text.lower().split()
-    encoded = [word_index.get(word, 2) for word in text]  # 2 = unknown token
-    encoded = encoded[:MAX_LEN]
-    padding = [0] * (MAX_LEN - len(encoded))
-    final = encoded + padding
-    return np.array([final])
+MAX_LEN = 200  # same as training
 
 
-# -------------------------------------
-# UI Input
-# -------------------------------------
-review_text = st.text_area("✍ Write a movie review:")
+# -------------------------------
+# Prediction Function
+# -------------------------------
+def predict_review(text):
+    seq = tokenizer.texts_to_sequences([text])
+    padded = pad_sequences(seq, maxlen=MAX_LEN)
+    pred = model.predict(padded)[0][0]
 
-if st.button("Predict Sentiment"):
-    if review_text.strip() == "":
-        st.warning("⚠ Please enter a review before predicting.")
+    sentiment = "Positive 😃" if pred > 0.5 else "Negative 😡"
+    confidence = round(float(pred if pred > 0.5 else 1 - pred) * 100, 2)
+
+    return sentiment, confidence, pred
+
+
+# -------------------------------
+# User Input
+# -------------------------------
+user_input = st.text_area("✍️ Write a movie review to analyze:", height=180)
+
+if st.button("Analyze Sentiment"):
+    if user_input.strip():
+        with st.spinner("Analyzing review..."):
+            sentiment, confidence, raw_score = predict_review(user_input)
+
+        st.success(f"**Prediction:** {sentiment}")
+        st.write(f"**Confidence:** {confidence}%")
+        st.write(f"Raw model probability: `{raw_score:.4f}`")
+
     else:
-        processed = preprocess_text(review_text)
-        prediction = model.predict(processed)[0][0]
+        st.warning("⚠️ Please enter a review before clicking the button.")
 
-        sentiment = "👍 Positive" if prediction > 0.5 else "👎 Negative"
 
-        st.subheader(f"Result: {sentiment}")
-        st.write(f"Confidence Score: **{prediction:.4f}**")
-
-# -------------------------------------
+# -------------------------------
 # Footer
-# -------------------------------------
+# -------------------------------
 st.write("---")
-st.caption("Model: LSTM trained on IMDB Reviews dataset | Built by Feruz Juraev (NLP Course Project)")
+st.caption("Model: IMDB LSTM Sentiment Classifier | Built by Juraev Feruz")
