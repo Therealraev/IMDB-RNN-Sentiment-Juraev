@@ -1,97 +1,96 @@
 import streamlit as st
 import numpy as np
 import json
-import pickle
+import tflite_runtime.interpreter as tflite
 
-import tensorflow as tf
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-
-# -----------------------
-# Load model and resources
-# -----------------------
+# -------------------------
+# Load Model + Word Index
+# -------------------------
 
 @st.cache_resource
 def load_model():
-    model = tf.keras.models.load_model("imdb_lstm_model.h5")
-    return model
+    interpreter = tflite.Interpreter(model_path="model.tflite")
+    interpreter.allocate_tensors()
+    return interpreter
 
 @st.cache_resource
-def load_word_index_and_config():
-    with open("imdb_word_index.json", "r") as f:
-        word_index = json.load(f)
-    with open("config.pkl", "rb") as f:
-        config = pickle.load(f)
-    return word_index, config
+def load_word_index():
+    with open("imdb_word_index.json") as f:
+        return json.load(f)
 
-model = load_model()
-word_index, config = load_word_index_and_config()
+interpreter = load_model()
+word_index = load_word_index()
 
-VOCAB_SIZE = config["vocab_size"]
-MAXLEN = config["maxlen"]
+input_index = interpreter.get_input_details()[0]["index"]
+output_index = interpreter.get_output_details()[0]["index"]
 
-# Reserved indices as in Keras IMDB dataset / class notes:
-# 0 = <PAD>, 1 = <START>, 2 = <UNK>, 3 = first word, ...
-INDEX_OFFSET = 3  # actual words start at index 3
 
-# -----------------------
-# Helper: encode review text
-# -----------------------
+# -------------------------
+# Helper: Text → Model Input
+# -------------------------
 
-def encode_review(text, word_index, maxlen=MAXLEN):
-    # Very simple tokenizer: lowercase + split by space
+MAXLEN = 200
+
+def preprocess_text(text):
     words = text.lower().split()
-    sequence = []
-    for w in words:
-        if w in word_index:
-            idx = word_index[w] + INDEX_OFFSET
-            if idx < VOCAB_SIZE:
-                sequence.append(idx)
-            else:
-                sequence.append(2)  # <UNK>
-        else:
-            sequence.append(2)      # <UNK>
+    seq = [word_index.get(w, 2) for w in words]  # unknown token=2
 
-    # Add <START> token at beginning
-    sequence = [1] + sequence
-    padded = pad_sequences([sequence], maxlen=maxlen)
-    return padded
+    if len(seq) > MAXLEN:
+        seq = seq[:MAXLEN]
+    else:
+        seq += [0] * (MAXLEN - len(seq))
 
-def predict_sentiment(text):
-    seq = encode_review(text, word_index, MAXLEN)
-    proba = model.predict(seq, verbose=0)[0][0]
-    label = "Positive 😀" if proba >= 0.5 else "Negative 😞"
-    return label, float(proba)
+    return np.array([seq], dtype=np.int32)
 
-# -----------------------
+
+# -------------------------
+# Prediction Function
+# -------------------------
+
+def predict(text):
+    x = preprocess_text(text)
+
+    interpreter.set_tensor(input_index, x)
+    interpreter.invoke()
+    pred = interpreter.get_tensor(output_index)[0][0]
+
+    label = "Positive 😃" if pred > 0.5 else "Negative 😡"
+    return label, float(pred)
+
+
+# -------------------------
 # Streamlit UI
-# -----------------------
+# -------------------------
 
-st.title("IMDB Movie Review Classifier by Juraev")  # <- change to your last name exactly as requested
+st.title("IMDB Movie Review Classifier by Juraev")
 
-st.write("This app uses an LSTM RNN model trained on the IMDB dataset to classify movie reviews as positive or negative.")
+st.write("This app predicts whether a movie review expresses a **positive** or **negative** sentiment.")
 
-st.subheader("Sample Reviews (5 examples)")
+# Sample reviews required by assignment
 sample_reviews = [
-    "This movie was absolutely fantastic, I loved every minute of it.",
-    "The plot was boring and predictable, I almost fell asleep.",
-    "Amazing cinematography, but the story was very weak.",
-    "I would not recommend this film to anyone, it was terrible.",
-    "One of the best movies I have ever seen in my life!"
+    "This movie was amazing! I really enjoyed every scene.",
+    "Worst movie ever. I wasted 2 hours of my life.",
+    "The acting was okay but the storyline was weak and boring.",
+    "Absolutely loved it! The visuals and plot were perfect.",
+    "Not bad, but could have been much better. Mixed feelings."
 ]
 
-for i, review in enumerate(sample_reviews, start=1):
-    label, proba = predict_sentiment(review)
-    st.markdown(f"**Review {i}:** {review}")
-    st.markdown(f"**Prediction:** {label} (score = {proba:.3f})")
-    st.markdown("---")
+st.subheader("📌 Example Reviews and Predictions")
 
-st.subheader("Try your own review")
-user_text = st.text_area("Type a movie review in English:")
+for review in sample_reviews:
+    label, prob = predict(review)
+    st.write(f"**Review:** {review}")
+    st.write(f"**Prediction:** {label} ({prob:.4f})")
+    st.divider()
 
-if st.button("Classify Review"):
-    if user_text.strip():
-        label, proba = predict_sentiment(user_text.strip())
-        st.write("**Result:**", label)
-        st.write(f"**Score:** {proba:.3f}")
+# Custom Single Input
+st.subheader("🔍 Try Your Own Review")
+
+user_input = st.text_area("Enter movie review here:")
+
+if st.button("Classify"):
+    if user_input.strip():
+        label, prob = predict(user_input)
+        st.success(f"Prediction: **{label}**  ({prob:.4f})")
     else:
-        st.warning("Please type a review first.")
+        st.warning("Please enter a review before clicking classify.")
