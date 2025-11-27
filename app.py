@@ -16,7 +16,6 @@ st.write("Enter a movie review below and the model will classify it as **Positiv
 # Load Model
 # -------------------------------
 @st.cache_resource
-@st.cache_resource
 def load_model():
     return tf.keras.models.load_model(
         "imdb_streamlit_safe.h5",
