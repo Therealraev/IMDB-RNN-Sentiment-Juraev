@@ -5,6 +5,7 @@ import json
 import pickle
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from keras.models import load_model
+import tensorflow as tf
 # -------------------------------
 # Streamlit App Header
 # -------------------------------
@@ -16,12 +17,18 @@ st.write("Enter a movie review below and the model will classify it as **Positiv
 # Load Model
 # -------------------------------
 
+
+
 @st.cache_resource
-def load_model_fn():
-    return load_model(
-        "imdb_streamlit_model.keras",
-        compile=False
-    )
+def load_model():
+    interpreter = tf.lite.Interpreter(model_path="imdb_sentiment.tflite")
+    interpreter.allocate_tensors()
+    return interpreter
+
+interpreter = load_model()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
 
 model = load_model_fn()
 
@@ -49,15 +56,16 @@ MAX_LEN = 200  # same as training
 # -------------------------------
 def predict_review(text):
     seq = tokenizer.texts_to_sequences([text])
-    padded = pad_sequences(seq, maxlen=MAX_LEN)
-    pred = model.predict(padded)[0][0]
+    padded = pad_sequences(seq, maxlen=MAX_LEN).astype("float32")
+
+    interpreter.set_tensor(input_details[0]['index'], padded)
+    interpreter.invoke()
+    pred = interpreter.get_tensor(output_details[0]['index'])[0][0]
 
     sentiment = "Positive 😃" if pred > 0.5 else "Negative 😡"
     confidence = round(float(pred if pred > 0.5 else 1 - pred) * 100, 2)
 
     return sentiment, confidence, pred
-
-
 # -------------------------------
 # User Input
 # -------------------------------
