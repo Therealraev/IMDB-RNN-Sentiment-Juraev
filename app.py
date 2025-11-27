@@ -1,85 +1,99 @@
 import streamlit as st
 import tensorflow as tf
-import numpy as np
 import json
-import pickle
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from keras.models import load_model
-import tensorflow as tf
+
 # -------------------------------
-# Streamlit App Header
+# App UI
 # -------------------------------
-st.set_page_config(page_title="IMDB Sentiment Classifier")
+st.set_page_config(page_title="IMDB Sentiment Classifier", layout="centered")
+
 st.title("🎬 IMDB Movie Review Sentiment Classifier by Juraev")
 st.write("Enter a movie review below and the model will classify it as **Positive** or **Negative**.")
 
+MAX_LEN = 200
+VOCAB_SIZE = 10000
+
+
 # -------------------------------
-# Load Model
+# Load TFLite Model
 # -------------------------------
-
-
-
 @st.cache_resource
-def load_model():
+def load_tflite_model():
     interpreter = tf.lite.Interpreter(model_path="imdb_sentiment.tflite")
     interpreter.allocate_tensors()
     return interpreter
 
-interpreter = load_model()
+
+interpreter = load_tflite_model()
+
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
 
-model = load_model()
-
 # -------------------------------
-# Load Tokenizer
+# Load Word Index
 # -------------------------------
 @st.cache_resource
-def load_tokenizer():
-    from tensorflow.keras.preprocessing.text import Tokenizer
+def load_word_index():
     with open("imdb_word_index.json") as f:
-        word_index = json.load(f)
+        index = json.load(f)
 
-    tokenizer = Tokenizer(num_words=10000)
-    tokenizer.word_index = word_index
-    return tokenizer
+    # Match IMDB encoding rules
+    index = {k:(v+3) for k, v in index.items()}
+    index["<PAD>"] = 0
+    index["<START>"] = 1
+    index["<UNK>"] = 2
+    index["<UNUSED>"] = 3
+    return index
 
 
-tokenizer = load_tokenizer()
+word_index = load_word_index()
 
-MAX_LEN = 200  # same as training
+
+# -------------------------------
+# Encoding Function (IMDB style)
+# -------------------------------
+def encode_review(text):
+    words = text.lower().split()
+    encoded = [1]  # <START>
+
+    for w in words:
+        encoded.append(word_index.get(w, 2))  # 2 = <UNK>
+
+    return encoded
 
 
 # -------------------------------
 # Prediction Function
 # -------------------------------
 def predict_review(text):
-    seq = tokenizer.texts_to_sequences([text])
-    padded = pad_sequences(seq, maxlen=MAX_LEN).astype("float32")
+    encoded = encode_review(text)
+    padded = pad_sequences([encoded], maxlen=MAX_LEN).astype("float32")
 
     interpreter.set_tensor(input_details[0]['index'], padded)
     interpreter.invoke()
-    pred = interpreter.get_tensor(output_details[0]['index'])[0][0]
+    pred = float(interpreter.get_tensor(output_details[0]['index'])[0][0])
 
     sentiment = "Positive 😃" if pred > 0.5 else "Negative 😡"
-    confidence = round(float(pred if pred > 0.5 else 1 - pred) * 100, 2)
+    confidence = round((pred if pred > 0.5 else 1 - pred) * 100, 2)
 
     return sentiment, confidence, pred
+
+
 # -------------------------------
-# User Input
+# Input UI
 # -------------------------------
-user_input = st.text_area("✍️ Write a movie review to analyze:", height=180)
+review = st.text_area("🧠 Write a movie review to analyze:", height=160)
 
 if st.button("Analyze Sentiment"):
-    if user_input.strip():
-        with st.spinner("Analyzing review..."):
-            sentiment, confidence, raw_score = predict_review(user_input)
+    if review.strip():
+        with st.spinner("Analyzing... 🧪"):
+            sentiment, confidence, score = predict_review(review)
 
         st.success(f"**Prediction:** {sentiment}")
-        st.write(f"**Confidence:** {confidence}%")
-        st.write(f"Raw model probability: `{raw_score:.4f}`")
-
+        st.write(f"Confidence: **{confidence}%**")
+        st.write(f"Raw model probability: `{score:.4f}`")
     else:
         st.warning("⚠️ Please enter a review before clicking the button.")
 
