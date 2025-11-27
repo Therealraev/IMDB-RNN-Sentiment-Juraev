@@ -4,7 +4,7 @@ import numpy as np
 import json
 import pickle
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-
+from keras.models import load_model
 # -------------------------------
 # Streamlit App Header
 # -------------------------------
@@ -15,32 +15,29 @@ st.write("Enter a movie review below and the model will classify it as **Positiv
 # -------------------------------
 # Load Model
 # -------------------------------
+
 @st.cache_resource
-def load_model():
-    return tf.keras.models.load_model(
-        "imdb_streamlit_final.h5",
-        compile=False,
-        safe_mode=False,
-        custom_objects={
-            "Embedding": tf.keras.layers.Embedding,
-            "LSTM": tf.keras.layers.LSTM,
-            "Bidirectional": tf.keras.layers.Bidirectional,
-            "Dropout": tf.keras.layers.Dropout,
-            "Dense": tf.keras.layers.Dense
-        }
+def load_model_fn():
+    return load_model(
+        "imdb_streamlit_model.keras",
+        compile=False
     )
 
-
-model = load_model()
+model = load_model_fn()
 
 # -------------------------------
 # Load Tokenizer
 # -------------------------------
 @st.cache_resource
 def load_tokenizer():
-    with open("tokenizer.pkl", "rb") as f:
-        tokenizer = pickle.load(f)
+    from tensorflow.keras.preprocessing.text import Tokenizer
+    with open("imdb_word_index.json") as f:
+        word_index = json.load(f)
+
+    tokenizer = Tokenizer(num_words=10000)
+    tokenizer.word_index = word_index
     return tokenizer
+
 
 tokenizer = load_tokenizer()
 
