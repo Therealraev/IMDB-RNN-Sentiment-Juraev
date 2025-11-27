@@ -30,7 +30,7 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
 
-model = load_model_fn()
+model = load_model()
 
 # -------------------------------
 # Load Tokenizer
