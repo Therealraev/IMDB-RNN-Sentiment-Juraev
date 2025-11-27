@@ -4,7 +4,6 @@ import numpy as np
 import json
 import pickle
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import load_model as keras_load_model
 
 # -------------------------------
 # Streamlit App Header
@@ -13,16 +12,28 @@ st.set_page_config(page_title="IMDB Sentiment Classifier")
 st.title("🎬 IMDB Movie Review Sentiment Classifier")
 st.write("Enter a movie review below and the model will classify it as **Positive** or **Negative**.")
 
+# -------------------------------
+# Load Model
+# -------------------------------
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model("imdb_streamlit_model.h5", compile=False)
+    return tf.keras.models.load_model(
+        "imdb_streamlit_model.h5",
+        compile=False,
+        safe_mode=False,
+        custom_objects={
+            "Embedding": tf.keras.layers.Embedding,
+            "LSTM": tf.keras.layers.LSTM,
+            "Bidirectional": tf.keras.layers.Bidirectional,
+            "Dropout": tf.keras.layers.Dropout,
+            "Dense": tf.keras.layers.Dense
+        }
+    )
 
 model = load_model()
 
-
-
 # -------------------------------
-# Load Tokenizer + Word Index
+# Load Tokenizer
 # -------------------------------
 @st.cache_resource
 def load_tokenizer():
