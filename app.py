@@ -9,7 +9,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 # Streamlit App Header
 # -------------------------------
 st.set_page_config(page_title="IMDB Sentiment Classifier")
-st.title("🎬 IMDB Movie Review Sentiment Classifier")
+st.title("🎬 IMDB Movie Review Sentiment Classifier by Juraev")
 st.write("Enter a movie review below and the model will classify it as **Positive** or **Negative**.")
 
 # -------------------------------
